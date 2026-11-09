@@ -5,18 +5,22 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import html
+import json
 import logging
+import math
 import threading
 from collections import OrderedDict
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from functools import partial
 from time import monotonic
 from typing import Any, Protocol, override, runtime_checkable
 
 from deerflow_extension_api import CompactionEvent, ExtensionData, canonical_hash, task_store_from_runtime
 from langchain.agents import AgentState
 from langchain.agents.middleware import SummarizationMiddleware
-from langchain_core.messages import AnyMessage, HumanMessage, RemoveMessage, SystemMessage, get_buffer_string
+from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, RemoveMessage, SystemMessage, convert_to_messages, get_buffer_string
+from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.config import get_config
 from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
@@ -47,6 +51,49 @@ _SUMMARY_CHUNK_RETRY_MAX_ENTRIES = 128
 _SUMMARY_CHUNK_RETRY_CACHE: OrderedDict[str, tuple[float, int]] = OrderedDict()
 _SUMMARY_CHUNK_RETRY_LOCK = threading.Lock()
 _SHORTENED_SUMMARY_MARKER = "\n[summary shortened]\n"
+
+
+def _reasoning_payload_text(reasoning: object) -> str:
+    """Return the text form a reasoning-aware provider replays to the model."""
+    if isinstance(reasoning, str):
+        return reasoning
+    try:
+        return json.dumps(reasoning, ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError):
+        return str(reasoning)
+
+
+def _count_tokens_with_replayed_reasoning(
+    messages: Iterable[Any],
+    *,
+    base_counter: Callable[..., int] = count_tokens_approximately,
+    chars_per_token: float | None = None,
+    **counter_kwargs: Any,
+) -> int:
+    """Approximate prompt tokens, including provider-replayed reasoning fields.
+
+    ``count_tokens_approximately`` only inspects message content and tool calls.
+    Reasoning-aware OpenAI-compatible adapters keep the assistant's prior
+    ``reasoning`` / ``reasoning_content`` in ``additional_kwargs`` and replay it
+    on subsequent requests, so vLLM and other gateways charge those bytes as
+    input. Count the canonical field once (``reasoning`` takes precedence over
+    the legacy alias), otherwise compaction can stay dormant until the provider
+    rejects an over-limit prompt.
+    """
+    converted = convert_to_messages(messages)
+    if chars_per_token is None:
+        chars_per_token = float((getattr(base_counter, "keywords", None) or {}).get("chars_per_token", 4.0))
+    count = base_counter(converted, chars_per_token=chars_per_token, **counter_kwargs)
+    for message in converted:
+        if not isinstance(message, AIMessage):
+            continue
+        reasoning = message.additional_kwargs.get("reasoning")
+        if reasoning is None:
+            reasoning = message.additional_kwargs.get("reasoning_content")
+        text = _reasoning_payload_text(reasoning) if reasoning is not None else ""
+        if text:
+            count += math.ceil(len(text) / chars_per_token)
+    return count
 
 
 def _document_summary_text(block: object) -> str | None:
@@ -176,7 +223,14 @@ class DeerFlowSummarizationMiddleware(SummarizationMiddleware):
         extensions=None,
         **kwargs,
     ) -> None:
+        uses_default_token_counter = "token_counter" not in kwargs
         super().__init__(*args, **kwargs)
+        if uses_default_token_counter:
+            # Keep LangChain's model-tuned base counters, including its separate
+            # no-scaling variant used to size retained history, and add the
+            # provider-replayed reasoning payload to both.
+            self.token_counter = partial(_count_tokens_with_replayed_reasoning, base_counter=self.token_counter)
+            self._partial_token_counter = partial(_count_tokens_with_replayed_reasoning, base_counter=self._partial_token_counter)
         self._task_continuity_config = task_continuity_config if task_continuity_config is not None and task_continuity_config.enabled is True else None
         self._before_summarization_hooks = before_summarization or []
         # Model-ownership state. The model that actually executes the run is selected
@@ -1350,8 +1404,6 @@ def create_summarization_middleware(
 
     hooks: list[BeforeSummarizationHook] = []
     if resolved_app_config.memory.enabled and not skip_memory_flush:
-        from functools import partial
-
         from deerflow.agents.memory.summarization_hook import memory_flush_hook
 
         hooks.append(partial(memory_flush_hook, pii_redaction_config=getattr(resolved_app_config, "pii_redaction", None)))

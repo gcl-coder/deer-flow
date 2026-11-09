@@ -719,6 +719,59 @@ def test_multiple_id_swap_triplets_preserve_tagged_order() -> None:
     assert "How are you?" in summarized_contents
 
 
+def test_factory_token_counter_counts_replayed_reasoning(monkeypatch):
+    """Reasoning replayed by OpenAI-compatible providers must count as prompt input."""
+    monkeypatch.setattr("deerflow.agents.middlewares.summarization_middleware.create_chat_model", lambda **_kwargs: _StaticChatModel())
+    config = _factory_app_config(("run-model",))
+
+    middleware = create_summarization_middleware(app_config=config, run_model_name="run-model", keep=("messages", 2))
+
+    assert middleware is not None
+    plain = middleware.token_counter([AIMessage(content="answer")])
+    with_reasoning = middleware.token_counter([AIMessage(content="answer", additional_kwargs={"reasoning": "x" * 400})])
+
+    assert with_reasoning == plain + 100
+
+
+def test_replayed_reasoning_can_trigger_compaction(monkeypatch):
+    """A reasoning-only gap must be enough to cross the configured token threshold."""
+    monkeypatch.setattr("deerflow.agents.middlewares.summarization_middleware.create_chat_model", lambda **_kwargs: _StaticChatModel())
+    config = _factory_app_config(("run-model",), summarization_kwargs={"trigger": ContextSize(type="tokens", value=100)})
+
+    middleware = create_summarization_middleware(app_config=config, run_model_name="run-model", keep=("messages", 2))
+    assert middleware is not None
+
+    plain = [
+        HumanMessage(content="user-1"),
+        AIMessage(content="assistant-1"),
+        HumanMessage(content="user-2"),
+        AIMessage(content="assistant-2"),
+    ]
+    with_reasoning = [
+        plain[0],
+        AIMessage(content="assistant-1", additional_kwargs={"reasoning": "x" * 400}),
+        plain[2],
+        plain[3],
+    ]
+
+    assert middleware.compact_state({"messages": plain}, _runtime()) is None
+    assert middleware.compact_state({"messages": with_reasoning}, _runtime()) is not None
+
+
+def test_factory_token_counter_counts_legacy_reasoning_field_once(monkeypatch):
+    """``reasoning`` and its legacy alias describe the same replayed payload."""
+    monkeypatch.setattr("deerflow.agents.middlewares.summarization_middleware.create_chat_model", lambda **_kwargs: _StaticChatModel())
+    config = _factory_app_config(("run-model",))
+
+    middleware = create_summarization_middleware(app_config=config, run_model_name="run-model", keep=("messages", 2))
+
+    assert middleware is not None
+    legacy = middleware.token_counter([AIMessage(content="answer", additional_kwargs={"reasoning_content": "x" * 400})])
+    canonical = middleware.token_counter([AIMessage(content="answer", additional_kwargs={"reasoning": "x" * 400, "reasoning_content": "y" * 800})])
+
+    assert legacy == canonical
+
+
 def test_factory_attaches_memory_flush_hook_by_default(monkeypatch):
     """The lead path keeps ``memory_flush_hook`` so pre-compaction messages
     persist into durable memory. Verified via the factory with memory enabled

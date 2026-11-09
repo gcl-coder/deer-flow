@@ -282,6 +282,7 @@ The default LangChain prompt instructs the model to:
 - Uses approximate token counting based on character count
 - For Anthropic models: ~3.3 characters per token
 - For other models: Uses LangChain's default estimation
+- Includes provider-replayed assistant `reasoning` / `reasoning_content` exactly once; OpenAI-compatible gateways send that field back on later turns, so it consumes input context
 - Can be customized with a custom `token_counter` function
 
 ### Message Preservation

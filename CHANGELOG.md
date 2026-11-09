@@ -47,6 +47,11 @@ This section accumulates work toward the **2.3.0** milestone
 
 ### Fixed
 
+- **agents:** Token-based summarization now includes the reasoning text that
+  OpenAI-compatible providers replay from earlier assistant turns. Previously,
+  long reasoning runs could cross the provider's input limit without firing
+  compaction because only visible message content was counted. ([#8074])
+
 - **sandbox:** AIO commands from independent subagents now run concurrently when
   they carry per-call environment variables, including Lark CLI commands.
   Commands within one subagent remain ordered and client cleanup drains them.
@@ -16200,5 +16205,6 @@ with **180 merged pull requests** since the first 2.0 milestone tag.
 [#7992]: https://github.com/bytedance/deer-flow/pull/7992
 [#7993]: https://github.com/bytedance/deer-flow/pull/7993
 [#8006]: https://github.com/bytedance/deer-flow/pull/8006
+[#8074]: https://github.com/bytedance/deer-flow/issues/8074
 
 [#7998]: https://github.com/bytedance/deer-flow/issues/7998

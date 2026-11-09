@@ -26,6 +26,10 @@
 
 ### 修复
 
+- **智能体：** 基于 token 的摘要触发现在会计入 OpenAI 兼容提供方回放的历史推理内容。
+  此前长推理任务可能因触发检查只统计可见消息而绕过压缩，最终超过模型的输入上限。
+  ([#8074])
+
 - **网关：** 删除线程时不再在对话仍可读取的情况下返回成功。此前
   `DELETE /api/threads/{id}` 在检查点存储失败时只记录 DEBUG 日志，仍删除线程元数据行并
   返回成功；之后任何已登录用户都能通过 `GET /threads/{id}`、`/state`、`/history` 和
@@ -12837,3 +12841,4 @@ DeerFlow 2.0 是围绕"超级智能体"框架的彻底重写，核心包含子�
 [#7992]: https://github.com/bytedance/deer-flow/pull/7992
 [#7993]: https://github.com/bytedance/deer-flow/pull/7993
 [#8006]: https://github.com/bytedance/deer-flow/pull/8006
+[#8074]: https://github.com/bytedance/deer-flow/issues/8074
