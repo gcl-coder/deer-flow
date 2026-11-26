@@ -11,6 +11,14 @@ This section accumulates work toward the **2.3.0** milestone
 ([2.3.0](https://github.com/bytedance/deer-flow/milestone/4)).
 
 ### Added
+- **web_search:** `include_domains`, `exclude_domains` and `dedupe_by_domain` are
+  now read by every bundled search provider, including the keyless DuckDuckGo
+  default that previously had no source control. Each key is optional, and an
+  unchanged config returns the same rows as before. All providers answer with
+  one envelope (`query`, `provider`, `total_results`, `results`, `dropped_results`)
+  and a single `snippet` field, with `content` kept as an alias for one release.
+  ([#8666])
+
 - **crawl4ai:** `web_fetch` accepts an optional `max_chars` output cap (default
   4096). A page cut at the cap ends with a note giving the kept and total
   length. ([#8553](https://github.com/bytedance/deer-flow/pull/8553))
@@ -16470,3 +16478,4 @@ with **180 merged pull requests** since the first 2.0 milestone tag.
 [#8151]: https://github.com/bytedance/deer-flow/pull/8151
 [#8174]: https://github.com/bytedance/deer-flow/pull/8174
 [#8250]: https://github.com/bytedance/deer-flow/pull/8250
+[#8666]: https://github.com/bytedance/deer-flow/issues/8666

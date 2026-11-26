@@ -14,6 +14,12 @@
 
 ### 新增
 
+- **联网搜索：** 所有内置搜索提供方现在都读取 `include_domains`、`exclude_domains`
+  和 `dedupe_by_domain`，包括此前完全没有来源控制的免密钥 DuckDuckGo 默认项。三个键都可选，
+  不配置时返回的结果与之前一致。各提供方统一返回 `query`、`provider`、`total_results`、
+  `results`、`dropped_results` 结构，文本字段统一为 `snippet`，`content` 作为别名保留一个版本。
+  ([#8666])
+
 - **子智能体：** 后台批次可声明条目前置关系，并可登记一次主 Agent 接续，在批次结束后完成
   用户已要求的汇总或交付。接续保留持久化启动记录、取消和授权检查；启用 Goal 时仍由 Goal 负责续跑。([#7839](https://github.com/bytedance/deer-flow/pull/7839))
 
@@ -12925,3 +12931,4 @@ DeerFlow 2.0 是围绕"超级智能体"框架的彻底重写，核心包含子�
 [#8139]: https://github.com/bytedance/deer-flow/pull/8139
 [#8174]: https://github.com/bytedance/deer-flow/pull/8174
 [#8250]: https://github.com/bytedance/deer-flow/pull/8250
+[#8666]: https://github.com/bytedance/deer-flow/issues/8666

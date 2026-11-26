@@ -1010,16 +1010,48 @@ tools:
 
 Tavily search and fetch initialize their HTTPS clients on a worker thread so TLS trust loading does not block other agent runs. A tool cancelled during initialization closes its client before returning without sending a request.
 
-For Tavily, `include_domains` and `exclude_domains` are deployment-only options
-read from the `web_search` tool entry and passed directly to `TavilyClient.search`.
-For a non-empty `include_domains`, DeerFlow also sends `include_domains_mode: filter`
+`include_domains` and `exclude_domains` are deployment-only options read from the
+`web_search` tool entry. A host matches itself and its subdomains, exclusion wins
+over inclusion, and each list holds at most 10 entries. The model-visible
+arguments remain `query` and `time_range`; the filters do not apply to
+`web_fetch`.
+
+For Tavily, both lists are passed directly to `TavilyClient.search`. For a
+non-empty `include_domains`, DeerFlow also sends `include_domains_mode: filter`
 so Tavily restricts results to those domains rather than merely boosting them.
-Either list may be configured independently. Omitted options are not added to the SDK
-call; explicit empty lists are forwarded as `[]`, meaning no inclusion restriction
-or no excluded domains, respectively. No `include_domains_mode` is sent for an
-empty or omitted `include_domains`. These filters compose with `max_results`
-and the model's optional `time_range`. The model-visible arguments remain `query`
-and `time_range`; the filters do not apply to `web_fetch` or other search providers.
+Omitted options are not added to the SDK call; explicit empty lists are forwarded
+as `[]`, meaning no inclusion restriction or no excluded domains, respectively.
+No `include_domains_mode` is sent for an empty or omitted `include_domains`.
+These filters compose with `max_results` and the model's optional `time_range`.
+
+Serper writes the lists into the Google query as `site:` operators and still
+re-checks every returned row. DuckDuckGo has no domain parameters, so those rows
+are filtered locally after the search returns.
+
+`dedupe_by_domain` is an optional integer cap on results per registrable domain,
+with `0` or an omitted key leaving it off. It applies to Tavily, Serper and
+DuckDuckGo. The grouping key approximates the public suffix list: the last two
+labels, or the last three for a suffix such as `co.uk` or `com.cn` collected in
+the shared helper's table. A malformed value is reported as a tool error instead
+of being ignored, since silently running unfiltered would look like the cap
+worked.
+
+Every bundled search provider returns the same envelope:
+
+```json
+{
+  "query": "...",
+  "provider": "ddg",
+  "total_results": 3,
+  "results": [{"title": "...", "url": "...", "snippet": "..."}],
+  "dropped_results": 2
+}
+```
+
+`total_results` counts the rows that survived filtering, `dropped_results` counts
+the rows removed by the domain scope or the per-domain cap, and `snippet` is the
+single text field name. `content` is still emitted with the same value as a
+deprecated alias for one release, so existing prompts and skills keep working.
 
 #### Hosted reader URLs
 

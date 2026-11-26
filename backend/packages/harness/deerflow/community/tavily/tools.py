@@ -7,6 +7,7 @@ from langchain.tools import tool
 from tavily import AsyncTavilyClient
 
 from deerflow.community.provider_credentials import resolve_api_key
+from deerflow.community.search_filters import cap_results_per_domain, coerce_domain_cap, result_envelope
 from deerflow.community.search_time_range import SearchTimeRange
 from deerflow.community.url_safety import safe_public_result_url, validate_hosted_fetch_url
 from deerflow.config import get_app_config
@@ -89,6 +90,16 @@ async def web_search_tool(query: str, time_range: SearchTimeRange | None = None)
     if config is not None and "max_results" in config.model_extra:
         max_results = config.model_extra.get("max_results")
 
+    per_domain_cap = 0
+    if config is not None:
+        # Read the cap before the request so a malformed value fails instead of
+        # returning results the operator believes were deduplicated.
+        try:
+            per_domain_cap = coerce_domain_cap(config.model_extra.get("dedupe_by_domain"))
+        except ValueError as exc:
+            logger.error("Invalid Tavily search filters: %s", exc)
+            return json.dumps({"error": str(exc), "query": query}, ensure_ascii=False)
+
     search_kwargs: dict[str, object] = {"max_results": max_results}
     if config is not None:
         for key in ("include_domains", "exclude_domains"):
@@ -114,8 +125,9 @@ async def web_search_tool(query: str, time_range: SearchTimeRange | None = None)
         }
         for result in results
     ]
-    json_results = json.dumps(normalized_results, indent=2, ensure_ascii=False)
-    return json_results
+    # Tavily filters domains natively, so only the per-domain cap runs here.
+    kept, dropped = cap_results_per_domain(normalized_results, per_domain_cap)
+    return json.dumps(result_envelope(query, "tavily", kept, dropped), indent=2, ensure_ascii=False)
 
 
 @tool("web_fetch", parse_docstring=True)

@@ -103,7 +103,8 @@ def test_scope_normalization_boundary_and_precedence(search):
 )
 def test_malformed_urls_removed_even_with_deny_only(search, url):
     result = search({"exclude_domains": ["blocked.com"]}, [url])
-    assert result == {"query": "news", "total_results": 0, "results": []}
+    assert result["total_results"] == 0
+    assert result["results"] == []
 
 
 def test_deny_only_and_limit_after_filtering(search):
@@ -156,7 +157,8 @@ def test_image_search_ignores_domain_settings(search):
 @pytest.mark.parametrize("time_range,tbs", [(None, None), ("day", "qdr:d"), ("month", "qdr:m"), ("year", "qdr:y")])
 def test_empty_provider_response_and_recency(search, time_range, tbs):
     result = search({"include_domains": ["example.com"]}, time_range=time_range)
-    assert result == {"query": "news", "total_results": 0, "results": []}
+    assert result["total_results"] == 0
+    assert result["results"] == []
     payload = search.post.call_args.kwargs["json"]
     assert payload.get("tbs") == tbs
     if tbs is None:

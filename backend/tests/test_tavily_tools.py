@@ -116,7 +116,7 @@ async def test_web_search_forwards_time_range_to_tavily() -> None:
         with patch("deerflow.community.tavily.tools._get_tavily_client", return_value=client):
             result = await web_search_tool.ainvoke({"query": "latest releases", "time_range": "month"})
 
-    assert json.loads(result)[0]["title"] == "Release notes"
+    assert json.loads(result)["results"][0]["title"] == "Release notes"
     client.search.assert_called_once_with("latest releases", max_results=5, time_range="month")
 
 
@@ -169,7 +169,7 @@ async def test_web_search_forwards_configured_domains(domain_config, time_range)
 
     client = search.call_args.args[0]
     search.assert_called_once_with(client, "documentation", **expected_kwargs)
-    assert json.loads(result) == [{"title": "Release notes", "url": "https://example.com/releases", "snippet": "A recent release."}]
+    assert json.loads(result)["results"] == [{"title": "Release notes", "url": "https://example.com/releases", "snippet": "A recent release.", "content": "A recent release."}]
 
 
 def test_web_search_keeps_domain_filters_out_of_model_schema() -> None:

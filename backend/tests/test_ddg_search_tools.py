@@ -326,3 +326,82 @@ def test_search_text_treats_only_the_exact_sdk_sentinel_as_empty(monkeypatch) ->
 
     with pytest.raises(tools.DDGSearchError, match="429"):
         tools._search_text("latest news")
+
+
+def _run_with_config(monkeypatch, rows, extra):
+    """Run the tool against a fixed result list and the given tool config."""
+    from deerflow.config.tool_config import ToolConfig
+
+    tool_config = ToolConfig.model_validate({"name": "web_search", "group": "web", "use": "deerflow.community.ddg_search.tools:web_search_tool", **extra})
+    monkeypatch.setattr(tools, "get_app_config", lambda: SimpleNamespace(get_tool_config=lambda name: tool_config))
+    monkeypatch.setattr(tools, "_search_text", lambda **kwargs: rows)
+    return json.loads(tools.web_search_tool.invoke({"query": "latest news"}))
+
+
+def test_web_search_tool_applies_configured_domain_scope(monkeypatch) -> None:
+    """DDGS has no domain parameters, so the scope is enforced on the returned rows."""
+    rows = [
+        {"title": "Keep", "href": "https://docs.python.org/3/", "body": "Library reference"},
+        {"title": "Blocked", "href": "https://spam.example.net/a", "body": "Mirror"},
+        {"title": "Not included", "href": "https://news.example.com/a", "body": "Blog"},
+    ]
+    parsed = _run_with_config(monkeypatch, rows, {"include_domains": ["python.org"], "exclude_domains": ["spam.example.net"]})
+
+    assert [row["title"] for row in parsed["results"]] == ["Keep"]
+    assert parsed["total_results"] == 1
+    # Two rows were out of scope, so the drop is reported rather than silent.
+    assert parsed["dropped_results"] == 2
+
+
+def test_web_search_tool_caps_repeated_sites(monkeypatch) -> None:
+    rows = [
+        {"title": "One", "href": "https://farm.example.com/1", "body": ""},
+        {"title": "Two", "href": "https://farm.example.com/2", "body": ""},
+        {"title": "Three", "href": "https://mirror.example.com/3", "body": ""},
+        {"title": "Other", "href": "https://other.test/1", "body": ""},
+    ]
+    parsed = _run_with_config(monkeypatch, rows, {"dedupe_by_domain": 1})
+
+    # Subdomains share a registrable domain, so the two mirrors collapse with the first row.
+    assert [row["title"] for row in parsed["results"]] == ["One", "Other"]
+    assert parsed["dropped_results"] == 2
+
+
+def test_web_search_tool_keeps_every_result_without_filter_settings(monkeypatch) -> None:
+    rows = [
+        {"title": "One", "href": "https://farm.example.com/1", "body": "First"},
+        {"title": "Two", "href": "https://farm.example.com/2", "body": "Second"},
+    ]
+    parsed = _run_with_config(monkeypatch, rows, {})
+
+    assert parsed["results"] == [
+        {"title": "One", "url": "https://farm.example.com/1", "snippet": "First", "content": "First"},
+        {"title": "Two", "url": "https://farm.example.com/2", "snippet": "Second", "content": "Second"},
+    ]
+    assert parsed["total_results"] == 2
+    assert parsed["dropped_results"] == 0
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        ({"include_domains": ["https://example.com"]}, "include_domains"),
+        ({"exclude_domains": ["*.example.com"]}, "exclude_domains"),
+        ({"dedupe_by_domain": "many"}, "dedupe_by_domain"),
+        ({"dedupe_by_domain": -1}, "dedupe_by_domain"),
+    ],
+)
+def test_web_search_tool_rejects_a_malformed_filter_before_searching(monkeypatch, caplog, extra, expected) -> None:
+    searched = []
+    from deerflow.config.tool_config import ToolConfig
+
+    tool_config = ToolConfig.model_validate({"name": "web_search", "group": "web", "use": "deerflow.community.ddg_search.tools:web_search_tool", **extra})
+    monkeypatch.setattr(tools, "get_app_config", lambda: SimpleNamespace(get_tool_config=lambda name: tool_config))
+    monkeypatch.setattr(tools, "_search_text", lambda **kwargs: searched.append(kwargs) or [])
+    caplog.set_level(logging.ERROR, logger=tools.__name__)
+
+    parsed = json.loads(tools.web_search_tool.invoke({"query": "latest news"}))
+
+    assert expected in parsed["error"]
+    assert searched == []
+    assert any(record.getMessage().startswith("Invalid DDG search filters") for record in caplog.records)

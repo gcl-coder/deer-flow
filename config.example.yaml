@@ -923,6 +923,9 @@ tools:
     # backend: auto          # DDGS backend(s): auto, duckduckgo, brave, wikipedia, etc.
     # region: wt-wt          # wt-wt is normalized for Wikipedia when backend includes auto/all/wikipedia.
     # safesearch: moderate   # on, moderate, off
+    # include_domains: []    # Keep only these sites; at most 10 entries
+    # exclude_domains: []    # Drop these sites; exclusion wins over inclusion
+    # dedupe_by_domain: 0    # 0 = off; otherwise keep at most N results per site
 
   # Web search tool (uses SearXNG, self-hosted, no API key required)
   # SearXNG is a free internet metasearch engine which aggregates results from
@@ -947,6 +950,7 @@ tools:
   #   # base_url: https://google.serper.dev  # Overrides SERPER_BASE_URL; omit /search
   #   include_domains: []  # Optional domain-only lists, at most 10 entries each
   #   exclude_domains: []  # Exclusion wins; see backend/docs/CONFIGURATION.md
+  #   dedupe_by_domain: 0  # 0 = off; otherwise keep at most N results per site
   #   # api_key: $SERPER_API_KEY  # Optional explicit env-var reference
 
   # Web search tool (uses Serply - Google Search API, requires SERPLY_API_KEY)

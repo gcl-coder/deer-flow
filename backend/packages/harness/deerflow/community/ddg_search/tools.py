@@ -7,6 +7,7 @@ import logging
 
 from langchain.tools import tool
 
+from deerflow.community.search_filters import cap_results_per_domain, coerce_domain_cap, domain_scope, matches_domain_scope, result_envelope
 from deerflow.community.search_max_results import DEFAULT_MAX_RESULTS, coerce_max_results
 from deerflow.community.search_time_range import DDGS_TIMELIMIT_BY_TIME_RANGE, SearchTimeRange
 from deerflow.community.url_safety import safe_public_result_url
@@ -195,13 +196,23 @@ def web_search_tool(
     region = DEFAULT_REGION
     safesearch = DEFAULT_SAFESEARCH
     backend = DEFAULT_BACKEND
+    extra = config.model_extra if config is not None else {}
+
+    # Source selection is read before the search so a malformed list fails
+    # instead of quietly returning unfiltered results.
+    try:
+        include, exclude = domain_scope(extra)
+        per_domain_cap = coerce_domain_cap(extra.get("dedupe_by_domain"))
+    except ValueError as exc:
+        logger.error("Invalid DDG search filters: %s", exc)
+        return json.dumps({"error": str(exc), "query": query}, ensure_ascii=False)
 
     if config is not None:
         # Override tool call defaults from config if set.
-        max_results = config.model_extra.get("max_results", max_results)
-        region = config.model_extra.get("region", region)
-        safesearch = config.model_extra.get("safesearch", safesearch)
-        backend = config.model_extra.get("backend", backend)
+        max_results = extra.get("max_results", max_results)
+        region = extra.get("region", region)
+        safesearch = extra.get("safesearch", safesearch)
+        backend = extra.get("backend", backend)
 
     try:
         results = _search_text(
@@ -219,19 +230,23 @@ def web_search_tool(
     if not results:
         return json.dumps({"error": "No results found", "query": query}, ensure_ascii=False)
 
+    # DDGS has no domain parameters, so the configured scope is applied to the
+    # rows it returned. Unconfigured lists skip both passes and the result set
+    # is byte-for-byte what it was before.
+    kept = results
+    dropped = 0
+    if include or exclude:
+        kept = [r for r in results if matches_domain_scope(r.get("href", r.get("link")), include, exclude)]
+        dropped = len(results) - len(kept)
+
     normalized_results = [
         {
             "title": r.get("title", ""),
             "url": safe_public_result_url(r.get("href", r.get("link"))),
-            "content": r.get("body", r.get("snippet", "")),
+            "snippet": r.get("body", r.get("snippet", "")),
         }
-        for r in results
+        for r in kept
     ]
+    normalized_results, capped = cap_results_per_domain(normalized_results, per_domain_cap)
 
-    output = {
-        "query": query,
-        "total_results": len(normalized_results),
-        "results": normalized_results,
-    }
-
-    return json.dumps(output, indent=2, ensure_ascii=False)
+    return json.dumps(result_envelope(query, "ddg", normalized_results, dropped + capped), indent=2, ensure_ascii=False)

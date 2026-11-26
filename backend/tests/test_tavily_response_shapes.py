@@ -122,9 +122,9 @@ async def test_search_mixed_entries_preserve_valid_results_in_order(monkeypatch,
 
     result, _ = await _invoke_search(monkeypatch, payload)
 
-    assert json.loads(result) == [
-        {"title": "First", "url": "https://ok.example/one", "snippet": "snippet"},
-        {"title": "Second", "url": "", "snippet": ""},
+    assert json.loads(result)["results"] == [
+        {"title": "First", "url": "https://ok.example/one", "snippet": "snippet", "content": "snippet"},
+        {"title": "Second", "url": "", "snippet": "", "content": ""},
     ]
     assert _error_logs(caplog) == []
 
@@ -134,7 +134,7 @@ async def test_search_mixed_entries_preserve_valid_results_in_order(monkeypatch,
 async def test_search_missing_or_null_leaf_fields_normalize_to_empty_text(monkeypatch, fields, caplog):
     result, requests = await _invoke_search(monkeypatch, {"results": [fields]})
 
-    assert json.loads(result) == [{"title": "", "url": "", "snippet": ""}]
+    assert json.loads(result)["results"] == [{"title": "", "url": "", "snippet": "", "content": ""}]
     assert len(requests) == 1
     assert _error_logs(caplog) == []
 
@@ -144,12 +144,15 @@ async def test_search_missing_or_null_leaf_fields_normalize_to_empty_text(monkey
 async def test_search_null_leaf_does_not_change_other_fields(monkeypatch, field, output_field, caplog):
     entry = {"title": "Report", "url": "https://example.com/report", "content": "Important findings."}
     entry[field] = None
-    expected = {"title": "Report", "url": "https://example.com/report", "snippet": "Important findings."}
+    expected = {"title": "Report", "url": "https://example.com/report", "snippet": "Important findings.", "content": "Important findings."}
     expected[output_field] = ""
+    if output_field == "snippet":
+        # ``content`` is an alias of the snippet, so clearing the text clears both.
+        expected["content"] = ""
 
     result, _ = await _invoke_search(monkeypatch, {"results": [entry]})
 
-    assert json.loads(result) == [expected]
+    assert json.loads(result)["results"] == [expected]
     assert _error_logs(caplog) == []
 
 
@@ -158,7 +161,7 @@ async def test_search_null_leaf_does_not_change_other_fields(monkeypatch, field,
 async def test_search_missing_or_empty_results_keep_empty_list(monkeypatch, payload, caplog):
     result, _ = await _invoke_search(monkeypatch, payload)
 
-    assert json.loads(result) == []
+    assert json.loads(result)["results"] == []
     assert _error_logs(caplog) == []
 
 
@@ -171,7 +174,7 @@ async def test_search_valid_payload_keeps_existing_normalization(monkeypatch, ca
 
     result, requests = await _invoke_search(monkeypatch, payload)
 
-    assert json.loads(result) == [{"title": "Release notes", "url": "https://example.com/releases", "snippet": "A recent release."}]
+    assert json.loads(result)["results"] == [{"title": "Release notes", "url": "https://example.com/releases", "snippet": "A recent release.", "content": "A recent release."}]
     assert len(requests) == 1
     assert _error_logs(caplog) == []
 

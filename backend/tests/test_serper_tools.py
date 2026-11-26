@@ -698,7 +698,7 @@ class TestWebSearchTool:
             result = web_search_tool.invoke({"query": "test"})
             parsed = json.loads(result)
 
-        assert parsed["results"][0] == {"title": "", "url": "", "content": ""}
+        assert parsed["results"][0] == {"title": "", "url": "", "snippet": "", "content": ""}
 
     def test_malformed_json_response_returns_error(self, mock_config_with_key):
         mock_resp = MagicMock()
@@ -1358,7 +1358,7 @@ class TestSearchTimeRange:
 
         assert post.call_args.args == ("https://google.serper.dev/search",)
         assert post.call_args.kwargs["json"] == {"q": "recent releases", "num": 5, "tbs": expected_tbs}
-        assert result == {"query": "recent releases", "total_results": 1, "results": [{"title": "Recent result", "url": "https://example.com", "content": "Recent content"}]}
+        assert result["results"] == [{"title": "Recent result", "url": "https://example.com", "snippet": "Recent content", "content": "Recent content"}]
 
     @pytest.mark.parametrize("arguments", [{"query": "releases"}, {"query": "releases", "time_range": None}])
     def test_omitted_or_null_keeps_original_request(self, mock_config_with_key, arguments):
